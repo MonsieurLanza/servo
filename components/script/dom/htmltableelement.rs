@@ -8,15 +8,18 @@ use dom::bindings::codegen::Bindings::HTMLTableElementBinding;
 use dom::bindings::codegen::Bindings::HTMLTableElementBinding::HTMLTableElementMethods;
 use dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use dom::bindings::inheritance::Castable;
-use dom::bindings::js::{LayoutJS, Root, RootedReference};
+use dom::bindings::js::{JS, LayoutJS, MutNullableHeap, Root, RootedReference};
 use dom::document::Document;
 use dom::element::{AttributeMutation, Element, RawLayoutElementHelpers};
+use dom::htmlcollection::{CollectionFilter, HTMLCollection};
 use dom::htmlelement::HTMLElement;
+use dom::htmltablerowelement::HTMLTableRowElement;
 use dom::htmltablecaptionelement::HTMLTableCaptionElement;
 use dom::htmltablesectionelement::HTMLTableSectionElement;
-use dom::node::{Node, document_from_node};
+use dom::node::{Node, document_from_node, window_from_node};
 use dom::virtualmethods::VirtualMethods;
 use std::cell::Cell;
+use std::default::Default;
 use string_cache::Atom;
 use util::str::{self, DOMString, LengthOrPercentageOrAuto};
 
@@ -25,6 +28,7 @@ pub struct HTMLTableElement {
     htmlelement: HTMLElement,
     border: Cell<Option<u32>>,
     cellspacing: Cell<Option<u32>>,
+    rows: MutNullableHeap<JS<HTMLCollection>>,
 }
 
 impl HTMLTableElement {
@@ -34,6 +38,7 @@ impl HTMLTableElement {
             htmlelement: HTMLElement::new_inherited(localName, prefix, document),
             border: Cell::new(None),
             cellspacing: Cell::new(None),
+            rows: Default::default(),
         }
     }
 
@@ -46,6 +51,14 @@ impl HTMLTableElement {
 
     pub fn get_border(&self) -> Option<u32> {
         self.border.get()
+    }
+}
+
+#[derive(JSTraceable, HeapSizeOf)]
+struct RowsFilter;
+impl CollectionFilter for RowsFilter {
+    fn filter(&self, elem: &Element, _root: &Node) -> bool {
+        elem.is::<HTMLTableRowElement>()
     }
 }
 
@@ -106,6 +119,15 @@ impl HTMLTableElementMethods for HTMLTableElement {
         node.InsertBefore(tbody.upcast(), reference_element.r())
             .expect("Insertion failed");
         tbody
+    }
+
+    // https://html.spec.whatwg.org/multipage/#dom-table-rows
+    fn Rows(&self) -> Root<HTMLCollection> {
+        self.rows.or_init(|| {
+            let filter = box RowsFilter;
+            let window = window_from_node(self);
+            HTMLCollection::create(window.r(), self.upcast(), filter)
+        })
     }
 
     // https://html.spec.whatwg.org/multipage/#dom-table-bgcolor
